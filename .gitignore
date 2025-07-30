@@ -1,0 +1,14 @@
+node_modules
+test_data/
+dist/
+.env
+*.log
+.DS_Store
+*.tmp
+coverage/
+build/
+.idea/
+.vscode/
+npm-debug.log*
+yarn-error.log
+*.swp

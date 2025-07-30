@@ -1,0 +1,89 @@
+{
+  "name": "Segmentation QC",
+  "version": "1.0.0",
+  "description": "Quality control configuration for semantic and instance segmentation",
+  "type": "segmentation",
+  "attributes": [
+    {
+      "name": "segmentation_quality",
+      "type": "select",
+      "options": ["precise", "approximate", "poor", "unacceptable"],
+      "description": "Overall quality of the segmentation",
+      "default": "precise"
+    },
+    {
+      "name": "boundary_accuracy",
+      "type": "number",
+      "min": 0,
+      "max": 100,
+      "step": 5,
+      "description": "Boundary accuracy percentage (0-100)",
+      "default": 85
+    },
+    {
+      "name": "completeness",
+      "type": "select",
+      "options": ["complete", "mostly_complete", "partial", "incomplete"],
+      "description": "Completeness of the segmentation",
+      "default": "complete"
+    },
+    {
+      "name": "edge_quality",
+      "type": "select",
+      "options": ["sharp", "soft", "rough", "very_rough"],
+      "description": "Quality of the segmentation edges",
+      "default": "sharp"
+    },
+    {
+      "name": "validation_status",
+      "type": "select",
+      "options": ["approved", "needs_minor_revision", "needs_major_revision", "rejected"],
+      "description": "Validation status of the segmentation",
+      "default": "approved"
+    },
+    {
+      "name": "mask_consistency",
+      "type": "select",
+      "options": ["consistent", "mostly_consistent", "inconsistent"],
+      "description": "Consistency of the segmentation mask",
+      "default": "consistent"
+    },
+    {
+      "name": "detail_level",
+      "type": "select",
+      "options": ["high_detail", "medium_detail", "low_detail", "insufficient_detail"],
+      "description": "Level of detail in the segmentation",
+      "default": "high_detail"
+    },
+    {
+      "name": "verified_by",
+      "type": "text",
+      "description": "Name or ID of the person who verified this segmentation",
+      "default": ""
+    },
+    {
+      "name": "review_date",
+      "type": "date",
+      "description": "Date when the segmentation was reviewed",
+      "default": ""
+    },
+    {
+      "name": "revision_notes",
+      "type": "textarea",
+      "description": "Notes about required revisions or quality issues",
+      "default": ""
+    }
+  ],
+  "validation_rules": [
+    {
+      "field": "validation_status",
+      "rule": "required",
+      "message": "Validation status is required"
+    },
+    {
+      "field": "verified_by",
+      "rule": "required",
+      "message": "Verifier name is required"
+    }
+  ]
+}

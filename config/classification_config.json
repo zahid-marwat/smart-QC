@@ -1,0 +1,89 @@
+{
+  "name": "Image Classification QC",
+  "version": "1.0.0",
+  "description": "Quality control configuration for image classification tasks",
+  "type": "classification",
+  "attributes": [
+    {
+      "name": "classification_confidence",
+      "type": "number",
+      "min": 0,
+      "max": 1,
+      "step": 0.01,
+      "description": "Confidence score of the classification (0-1)",
+      "default": 0.5
+    },
+    {
+      "name": "image_quality",
+      "type": "select",
+      "options": ["high", "medium", "low", "very_low"],
+      "description": "Overall quality of the image",
+      "default": "medium"
+    },
+    {
+      "name": "lighting_conditions",
+      "type": "select",
+      "options": ["excellent", "good", "fair", "poor", "artificial", "natural"],
+      "description": "Lighting conditions in the image",
+      "default": "good"
+    },
+    {
+      "name": "annotation_accuracy",
+      "type": "select",
+      "options": ["correct", "incorrect", "uncertain", "needs_review"],
+      "description": "Accuracy of the classification",
+      "default": "correct"
+    },
+    {
+      "name": "image_clarity",
+      "type": "select",
+      "options": ["sharp", "slightly_blurred", "blurred", "very_blurred"],
+      "description": "Clarity and sharpness of the image",
+      "default": "sharp"
+    },
+    {
+      "name": "background_complexity",
+      "type": "select",
+      "options": ["simple", "moderate", "complex", "very_complex"],
+      "description": "Complexity of the background",
+      "default": "moderate"
+    },
+    {
+      "name": "reviewer_id",
+      "type": "text",
+      "description": "ID or name of the person reviewing this classification",
+      "default": ""
+    },
+    {
+      "name": "review_date",
+      "type": "date",
+      "description": "Date when the classification was reviewed",
+      "default": ""
+    },
+    {
+      "name": "additional_notes",
+      "type": "textarea",
+      "description": "Additional notes about the classification",
+      "default": ""
+    },
+    {
+      "name": "training_suitable",
+      "type": "select",
+      "options": ["yes", "no", "maybe"],
+      "description": "Whether this image is suitable for training",
+      "default": "yes"
+    }
+  ],
+  "validation_rules": [
+    {
+      "field": "annotation_accuracy",
+      "rule": "required",
+      "message": "Annotation accuracy assessment is required"
+    },
+    {
+      "field": "reviewer_id",
+      "rule": "required",
+      "message": "Reviewer ID is required"
+    }
+  ]
+}

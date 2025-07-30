@@ -1,0 +1,360 @@
+{
+  "qc_types": {
+    "bb_qc": {
+      "name": "BB QC",
+      "description": "Bounding Box Quality Control",
+      "file_format": "xml",
+      "asset_types": {
+        "light_poles": {
+          "name": "Light Poles",
+          "description": "Street and area lighting infrastructure",
+          "attributes": {
+            "condition": {
+              "type": "select",
+              "label": "Condition",
+              "options": ["Excellent", "Good", "Fair", "Poor", "Critical"],
+              "required": true
+            },
+            "material": {
+              "type": "select",
+              "label": "Material",
+              "options": ["Steel", "Aluminum", "Concrete", "Composite", "Unknown"],
+              "required": false
+            },
+            "height_range": {
+              "type": "select",
+              "label": "Height Range",
+              "options": ["Low (0-3m)", "Medium (3-6m)", "High (6-12m)", "Very High (12m+)"],
+              "required": false
+            },
+            "functional_status": {
+              "type": "select",
+              "label": "Functional Status",
+              "options": ["Working", "Not Working", "Partially Working", "Unknown"],
+              "required": true
+            },
+            "installation_type": {
+              "type": "select",
+              "label": "Installation Type",
+              "options": ["Ground Mounted", "Wall Mounted", "Overhead", "Decorative"],
+              "required": false
+            },
+            "notes": {
+              "type": "textarea",
+              "label": "Additional Notes",
+              "placeholder": "Any additional observations...",
+              "required": false
+            }
+          }
+        },
+        "manholes_catch_basins": {
+          "name": "Manholes & Catch Basins",
+          "description": "Drainage and utility access infrastructure",
+          "attributes": {
+            "type": {
+              "type": "select",
+              "label": "Type",
+              "options": ["Manhole", "Catch Basin", "Storm Drain", "Utility Access", "Unknown"],
+              "required": true
+            },
+            "condition": {
+              "type": "select",
+              "label": "Condition",
+              "options": ["Excellent", "Good", "Fair", "Poor", "Critical"],
+              "required": true
+            },
+            "cover_condition": {
+              "type": "select",
+              "label": "Cover Condition",
+              "options": ["Intact", "Damaged", "Missing", "Displaced", "Broken"],
+              "required": true
+            },
+            "accessibility": {
+              "type": "select",
+              "label": "Accessibility",
+              "options": ["Clear", "Partially Blocked", "Blocked", "Overgrown"],
+              "required": false
+            },
+            "water_level": {
+              "type": "select",
+              "label": "Water Level",
+              "options": ["Dry", "Low", "Normal", "High", "Overflowing"],
+              "required": false
+            },
+            "debris_level": {
+              "type": "select",
+              "label": "Debris Level",
+              "options": ["Clean", "Minor", "Moderate", "Heavy", "Completely Blocked"],
+              "required": false
+            },
+            "notes": {
+              "type": "textarea",
+              "label": "Additional Notes",
+              "placeholder": "Any additional observations...",
+              "required": false
+            }
+          }
+        },
+        "pavement_markings": {
+          "name": "Pavement Markings",
+          "description": "Road surface markings and signage",
+          "attributes": {
+            "marking_type": {
+              "type": "select",
+              "label": "Marking Type",
+              "options": ["Lane Lines", "Center Lines", "Edge Lines", "Crosswalk", "Arrows", "Text", "Symbols", "Stop Lines"],
+              "required": true
+            },
+            "condition": {
+              "type": "select",
+              "label": "Condition",
+              "options": ["Excellent", "Good", "Fair", "Poor", "Faded", "Missing"],
+              "required": true
+            },
+            "visibility": {
+              "type": "select",
+              "label": "Visibility",
+              "options": ["High", "Medium", "Low", "Very Low", "Invisible"],
+              "required": true
+            },
+            "color": {
+              "type": "select",
+              "label": "Color",
+              "options": ["White", "Yellow", "Blue", "Red", "Green", "Orange", "Other"],
+              "required": false
+            },
+            "material": {
+              "type": "select",
+              "label": "Material",
+              "options": ["Paint", "Thermoplastic", "Tape", "Embedded", "Raised", "Unknown"],
+              "required": false
+            },
+            "retroreflectivity": {
+              "type": "select",
+              "label": "Retroreflectivity",
+              "options": ["Good", "Adequate", "Marginal", "Poor", "None"],
+              "required": false
+            },
+            "notes": {
+              "type": "textarea",
+              "label": "Additional Notes",
+              "placeholder": "Any additional observations...",
+              "required": false
+            }
+          }
+        },
+        "road_humps": {
+          "name": "Road Humps",
+          "description": "Speed control devices and traffic calming measures",
+          "attributes": {
+            "type": {
+              "type": "select",
+              "label": "Type",
+              "options": ["Speed Hump", "Speed Bump", "Speed Table", "Raised Crosswalk", "Rumble Strip"],
+              "required": true
+            },
+            "condition": {
+              "type": "select",
+              "label": "Condition",
+              "options": ["Excellent", "Good", "Fair", "Poor", "Damaged", "Deteriorated"],
+              "required": true
+            },
+            "material": {
+              "type": "select",
+              "label": "Material",
+              "options": ["Asphalt", "Concrete", "Rubber", "Plastic", "Composite", "Unknown"],
+              "required": false
+            },
+            "height_profile": {
+              "type": "select",
+              "label": "Height Profile",
+              "options": ["Low (50-75mm)", "Standard (75-100mm)", "High (100mm+)", "Variable"],
+              "required": false
+            },
+            "markings_visibility": {
+              "type": "select",
+              "label": "Markings Visibility",
+              "options": ["Clearly Visible", "Partially Visible", "Faded", "Missing"],
+              "required": false
+            },
+            "effectiveness": {
+              "type": "select",
+              "label": "Effectiveness",
+              "options": ["Very Effective", "Effective", "Somewhat Effective", "Ineffective"],
+              "required": false
+            },
+            "notes": {
+              "type": "textarea",
+              "label": "Additional Notes",
+              "placeholder": "Any additional observations...",
+              "required": false
+            }
+          }
+        }
+      }
+    },
+    "seg_qc": {
+      "name": "Seg QC",
+      "description": "Segmentation Quality Control",
+      "file_format": "json",
+      "asset_types": {
+        "curb_stones": {
+          "name": "Curb Stones",
+          "description": "Road edge and boundary structures",
+          "attributes": {
+            "condition": {
+              "type": "select",
+              "label": "Condition",
+              "options": ["Excellent", "Good", "Fair", "Poor", "Damaged", "Missing"],
+              "required": true
+            },
+            "material": {
+              "type": "select",
+              "label": "Material",
+              "options": ["Concrete", "Stone", "Granite", "Asphalt", "Plastic", "Metal", "Unknown"],
+              "required": false
+            },
+            "height": {
+              "type": "select",
+              "label": "Height",
+              "options": ["Low (0-10cm)", "Standard (10-20cm)", "High (20-30cm)", "Very High (30cm+)"],
+              "required": false
+            },
+            "continuity": {
+              "type": "select",
+              "label": "Continuity",
+              "options": ["Continuous", "Minor Gaps", "Major Gaps", "Discontinuous"],
+              "required": true
+            },
+            "alignment": {
+              "type": "select",
+              "label": "Alignment",
+              "options": ["Straight", "Curved", "Proper", "Displaced", "Misaligned"],
+              "required": false
+            },
+            "drainage_function": {
+              "type": "select",
+              "label": "Drainage Function",
+              "options": ["Good", "Adequate", "Poor", "Blocked", "Non-functional"],
+              "required": false
+            },
+            "notes": {
+              "type": "textarea",
+              "label": "Additional Notes",
+              "placeholder": "Any additional observations...",
+              "required": false
+            }
+          }
+        },
+        "footpaths": {
+          "name": "Footpaths",
+          "description": "Pedestrian walkways and sidewalks",
+          "attributes": {
+            "surface_condition": {
+              "type": "select",
+              "label": "Surface Condition",
+              "options": ["Excellent", "Good", "Fair", "Poor", "Cracked", "Uneven", "Damaged"],
+              "required": true
+            },
+            "material": {
+              "type": "select",
+              "label": "Material",
+              "options": ["Concrete", "Asphalt", "Pavers", "Tiles", "Stone", "Gravel", "Other"],
+              "required": false
+            },
+            "width_adequacy": {
+              "type": "select",
+              "label": "Width Adequacy",
+              "options": ["Adequate", "Wide", "Narrow", "Very Narrow", "Insufficient"],
+              "required": false
+            },
+            "accessibility": {
+              "type": "select",
+              "label": "Accessibility",
+              "options": ["Fully Accessible", "Mostly Accessible", "Partially Accessible", "Not Accessible"],
+              "required": true
+            },
+            "obstructions": {
+              "type": "select",
+              "label": "Obstructions",
+              "options": ["None", "Minor", "Moderate", "Significant", "Completely Blocked"],
+              "required": false
+            },
+            "lighting": {
+              "type": "select",
+              "label": "Lighting",
+              "options": ["Well Lit", "Adequately Lit", "Poorly Lit", "No Lighting"],
+              "required": false
+            },
+            "safety": {
+              "type": "select",
+              "label": "Safety Level",
+              "options": ["Very Safe", "Safe", "Moderate", "Unsafe", "Very Unsafe"],
+              "required": false
+            },
+            "notes": {
+              "type": "textarea",
+              "label": "Additional Notes",
+              "placeholder": "Any additional observations...",
+              "required": false
+            }
+          }
+        },
+        "lane_markings": {
+          "name": "Lane Markings",
+          "description": "Road lane delineation and traffic guidance",
+          "attributes": {
+            "marking_type": {
+              "type": "select",
+              "label": "Marking Type",
+              "options": ["Solid Line", "Dashed Line", "Double Line", "Lane Divider", "Turn Lane", "Merge Lane"],
+              "required": true
+            },
+            "condition": {
+              "type": "select",
+              "label": "Condition",
+              "options": ["Excellent", "Good", "Fair", "Poor", "Faded", "Worn", "Missing"],
+              "required": true
+            },
+            "visibility": {
+              "type": "select",
+              "label": "Visibility",
+              "options": ["High", "Medium", "Low", "Very Low", "Invisible"],
+              "required": true
+            },
+            "color": {
+              "type": "select",
+              "label": "Color",
+              "options": ["White", "Yellow", "Blue", "Red", "Green", "Orange"],
+              "required": true
+            },
+            "continuity": {
+              "type": "select",
+              "label": "Continuity",
+              "options": ["Continuous", "Minor Breaks", "Major Breaks", "Discontinuous"],
+              "required": true
+            },
+            "width_consistency": {
+              "type": "select",
+              "label": "Width Consistency",
+              "options": ["Consistent", "Mostly Consistent", "Variable", "Inconsistent"],
+              "required": false
+            },
+            "retroreflectivity": {
+              "type": "select",
+              "label": "Retroreflectivity",
+              "options": ["Excellent", "Good", "Adequate", "Poor", "None"],
+              "required": false
+            },
+            "notes": {
+              "type": "textarea",
+              "label": "Additional Notes",
+              "placeholder": "Any additional observations...",
+              "required": false
+            }
+          }
+        }
+      }
+    }
+  }
+}
