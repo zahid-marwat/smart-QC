@@ -3,42 +3,43 @@ import styled from 'styled-components';
 import { FiImage, FiFileText, FiChevronLeft, FiChevronRight, FiEdit3 } from 'react-icons/fi';
 
 const Container = styled.div`
-  height: 50%;
+  height: 100%;
   display: flex;
   flex-direction: column;
+  position: relative;
 `;
 
 const Header = styled.div`
-  padding: 16px;
+  padding: 4px;
   background: var(--light-gray);
   border-bottom: 1px solid var(--border-gray);
 `;
 
 const Title = styled.h3`
   color: var(--text-black);
-  font-size: 16px;
-  margin-bottom: 8px;
+  font-size: 18px;
+  margin-bottom: 1px;
 `;
 
 const Stats = styled.div`
-  font-size: 12px;
+  font-size: 10px;
   color: var(--text-black);
   opacity: 0.8;
 `;
 
 const ImageList = styled.div`
-  flex: 1;
+  flex: ;
   overflow-y: auto;
-  padding: 8px;
+  padding: 1px;
 `;
 
 const ImageItem = styled.div`
   display: flex;
   align-items: center;
   gap: 12px;
-  padding: 12px;
+  padding: 2px;
   margin: 4px 0;
-  border-radius: 8px;
+  border-radius: 4px;
   cursor: pointer;
   background: ${props => props.selected ? 'var(--primary-orange)' : 'var(--accent-white)'};
   color: ${props => props.selected ? 'var(--accent-white)' : 'var(--text-black)'};
@@ -63,20 +64,14 @@ const ImageInfo = styled.div`
 `;
 
 const ImageName = styled.div`
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 400;
-  white-space: nowrap;
+  white-space: wrap;
   overflow: hidden;
   text-overflow: ellipsis;
 `;
 
-const XmlStatus = styled.div`
-  font-size: 12px;
-  opacity: 0.8;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-`;
+
 
 const EditedIndicator = styled.div`
   display: flex;
@@ -88,7 +83,7 @@ const EditedIndicator = styled.div`
 `;
 
 const Navigation = styled.div`
-  padding: 16px;
+  padding: 8px;
   background: var(--light-gray);
   border-top: 1px solid var(--border-gray);
   display: flex;
@@ -119,7 +114,7 @@ const NavButton = styled.button`
   }
 `;
 
-const ImageViewer = React.forwardRef(({ folders, selectedConfig, onImageSelected, currentImage }, ref) => {
+const ImageViewer = React.forwardRef(({ folders, selectedConfig, qcType, onImageSelected, currentImage }, ref) => {
   const [imageList, setImageList] = useState([]);
   const [currentIndex, setCurrentIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -137,6 +132,13 @@ const ImageViewer = React.forwardRef(({ folders, selectedConfig, onImageSelected
     const handleKeyPress = (event) => {
       // Only handle keyboard navigation if we have images loaded
       if (imageList.length === 0) return;
+      
+      // Don't handle navigation if label dialog is open or if target is an input field
+      if (event.target.tagName === 'INPUT' || 
+          event.target.tagName === 'TEXTAREA' || 
+          event.target.contentEditable === 'true') {
+        return;
+      }
       
       const key = event.key.toLowerCase();
       
@@ -215,24 +217,37 @@ const ImageViewer = React.forwardRef(({ folders, selectedConfig, onImageSelected
             
             // Now get the folder contents
             const imagesResponse = await fetch(`http://localhost:5000/api/get-images?folder=${encodeURIComponent(folders.images)}`);
-            const xmlsResponse = await fetch(`http://localhost:5000/api/get-xmls?folder=${encodeURIComponent(folders.xmls)}`);
             
-            if (imagesResponse.ok && xmlsResponse.ok) {
+            // Use appropriate API endpoint based on QC type
+            const annotationEndpoint = qcType === 'segmentation' 
+              ? `http://localhost:5000/api/get-jsons?folder=${encodeURIComponent(folders.xmls)}`
+              : `http://localhost:5000/api/get-xmls?folder=${encodeURIComponent(folders.xmls)}`;
+            
+            const annotationResponse = await fetch(annotationEndpoint);
+            
+            if (imagesResponse.ok && annotationResponse.ok) {
               const imagesData = await imagesResponse.json();
-              const xmlsData = await xmlsResponse.json();
+              const annotationData = await annotationResponse.json();
+              
+              // Get annotation files (xmls or jsons based on QC type)
+              const annotationFiles = qcType === 'segmentation' 
+                ? annotationData.jsons 
+                : annotationData.xmls;
               
               const images = imagesData.images.map(imageFile => {
                 const baseName = imageFile.split('.')[0];
-                const xmlFile = xmlsData.xmls.find(xml => 
-                  xml.split('.')[0] === baseName
+                const annotationExt = qcType === 'segmentation' ? '.json' : '.xml';
+                const annotationFile = annotationFiles.find(file => 
+                  file.split('.')[0] === baseName
                 );
                 
                 return {
                   name: imageFile,
                   baseName,
                   fullPath: `${folders.images}/${imageFile}`,
-                  xmlFile: xmlFile ? `${folders.xmls}/${xmlFile}` : null,
-                  hasXml: !!xmlFile
+                  xmlFile: annotationFile ? `${folders.xmls}/${annotationFile}` : null,
+                  hasXml: !!annotationFile,
+                  annotationType: qcType === 'segmentation' ? 'json' : 'xml'
                 };
               });
               
@@ -271,31 +286,50 @@ const ImageViewer = React.forwardRef(({ folders, selectedConfig, onImageSelected
     console.log('ImageViewer: Selecting image:', image);
     setCurrentIndex(index);
     
-    let xmlContent = null;
+    let annotationContent = null;
     if (image.xmlFile) {
       if (window.electronAPI) {
-        console.log('ImageViewer: Loading XML via Electron:', image.xmlFile);
-        xmlContent = await window.electronAPI.readXmlFile(image.xmlFile);
+        console.log('ImageViewer: Loading annotation via Electron:', image.xmlFile);
+        if (qcType === 'segmentation') {
+          // For JSON files in segmentation mode
+          annotationContent = await window.electronAPI.readJsonFile(image.xmlFile);
+        } else {
+          // For XML files in detection mode
+          annotationContent = await window.electronAPI.readXmlFile(image.xmlFile);
+        }
       } else {
-        // Load XML via Flask backend
+        // Load annotation via Flask backend
         try {
-          console.log('ImageViewer: Loading XML via Flask backend:', image.xmlFile);
-          const xmlFileName = image.xmlFile.split('/').pop(); // Get just the filename
-          const response = await fetch(`http://localhost:5000/api/xml/${xmlFileName}`);
-          if (response.ok) {
-            xmlContent = await response.text();
-            console.log('ImageViewer: XML loaded successfully, length:', xmlContent.length);
+          console.log('ImageViewer: Loading annotation via Flask backend:', image.xmlFile);
+          const annotationFileName = image.xmlFile.split('/').pop(); // Get just the filename
+          
+          let response;
+          if (qcType === 'segmentation') {
+            // Use JSON endpoint for segmentation
+            response = await fetch(`http://localhost:5000/api/json/${annotationFileName}`);
           } else {
-            console.warn('ImageViewer: Failed to load XML:', response.status);
+            // Use XML endpoint for detection
+            response = await fetch(`http://localhost:5000/api/xml/${annotationFileName}`);
+          }
+          
+          if (response.ok) {
+            if (qcType === 'segmentation') {
+              annotationContent = await response.json();
+            } else {
+              annotationContent = await response.text();
+            }
+            console.log('ImageViewer: Annotation loaded successfully, type:', qcType);
+          } else {
+            console.warn('ImageViewer: Failed to load annotation:', response.status);
           }
         } catch (error) {
-          console.error('ImageViewer: Error loading XML:', error);
+          console.error('ImageViewer: Error loading annotation:', error);
         }
       }
     }
     
-    console.log('ImageViewer: Calling onImageSelected with XML content:', xmlContent ? 'Available' : 'None');
-    onImageSelected(image, xmlContent);
+    console.log('ImageViewer: Calling onImageSelected with annotation content:', annotationContent ? 'Available' : 'None');
+    onImageSelected(image, annotationContent);
   };
 
   // Function to mark an image as edited
@@ -342,7 +376,7 @@ const ImageViewer = React.forwardRef(({ folders, selectedConfig, onImageSelected
       <Header>
         <Title>Images</Title>
         <Stats>
-          {currentIndex + 1} of {imageList.length} • {imageList.filter(img => img.hasXml).length} with XML • {editedImages.size} edited
+          {currentIndex + 1} of {imageList.length} • {imageList.filter(img => img.hasXml).length} with XML  • • •  {editedImages.size} Files edited
         </Stats>
       </Header>
 
@@ -360,7 +394,7 @@ const ImageViewer = React.forwardRef(({ folders, selectedConfig, onImageSelected
               <ImageName>{image.name.replace(/\.[^/.]+$/, "")}</ImageName>
               {editedImages.has(image.name) && (
                 <EditedIndicator>
-                  <FiEdit3 size={10} />
+                  {/* <FiEdit3 size={10} /> */}
                   Edited
                 </EditedIndicator>
               )}

@@ -64,9 +64,31 @@ class SmartQCBackend:
             logger.error(f"Error reading XML folder: {e}")
             return []
     
+    def get_json_list(self, folder_path):
+        """Get list of JSON files in folder"""
+        json_files = []
+        
+        try:
+            for file_path in Path(folder_path).iterdir():
+                if file_path.suffix.lower() == '.json':
+                    json_files.append({
+                        'name': file_path.name,
+                        'path': str(file_path),
+                        'basename': file_path.stem
+                    })
+            return sorted(json_files, key=lambda x: x['name'])
+        except Exception as e:
+            logger.error(f"Error reading JSON folder: {e}")
+            return []
+    
     def read_xml_file(self, xml_path):
         """Read and parse XML file"""
         try:
+            # Check if file exists and is not empty
+            if not os.path.exists(xml_path) or os.path.getsize(xml_path) == 0:
+                logger.warning(f"XML file is empty or doesn't exist: {xml_path}")
+                return None
+                
             tree = ET.parse(xml_path)
             root = tree.getroot()
             
@@ -118,6 +140,43 @@ class SmartQCBackend:
             logger.error(f"Error reading XML file {xml_path}: {e}")
             return None
     
+    def read_json_file(self, json_path):
+        """Read and parse JSON file (LabelMe format)"""
+        try:
+            with open(json_path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Extract basic information
+            image_path = data.get('imagePath', '')
+            image_width = data.get('imageWidth', 0)
+            image_height = data.get('imageHeight', 0)
+            
+            # Extract shapes (segmentation polygons)
+            shapes = []
+            for shape in data.get('shapes', []):
+                shape_data = {
+                    'label': shape.get('label', 'unknown'),
+                    'shape_type': shape.get('shape_type', 'polygon'),
+                    'points': shape.get('points', []),
+                    'group_id': shape.get('group_id', None),
+                    'flags': shape.get('flags', {})
+                }
+                shapes.append(shape_data)
+            
+            return {
+                'imagePath': image_path,
+                'imageWidth': image_width,
+                'imageHeight': image_height,
+                'shapes': shapes,
+                'version': data.get('version', ''),
+                'flags': data.get('flags', {}),
+                'raw_json': data
+            }
+            
+        except Exception as e:
+            logger.error(f"Error reading JSON file {json_path}: {e}")
+            return None
+    
     def write_xml_file(self, xml_path, xml_data):
         """Write XML data to file"""
         try:
@@ -134,9 +193,24 @@ class SmartQCBackend:
             logger.error(f"Error writing XML file {xml_path}: {e}")
             return False
     
+    def write_json_file(self, json_path, json_data):
+        """Write JSON data to file (LabelMe format)"""
+        try:
+            with open(json_path, 'w', encoding='utf-8') as f:
+                json.dump(json_data, f, indent=2, ensure_ascii=False)
+            return True
+        except Exception as e:
+            logger.error(f"Error writing JSON file {json_path}: {e}")
+            return False
+    
     def update_xml_attributes(self, xml_path, object_index, attributes):
         """Update custom attributes in XML file"""
         try:
+            # Check if file exists and is not empty
+            if not os.path.exists(xml_path) or os.path.getsize(xml_path) == 0:
+                logger.warning(f"XML file is empty or doesn't exist: {xml_path}")
+                return False
+                
             tree = ET.parse(xml_path)
             root = tree.getroot()
             
@@ -262,6 +336,26 @@ def get_xmls():
         logger.error(f"Error reading XML folder: {e}")
         return jsonify({'error': 'Failed to read folder'}), 500
 
+@app.route('/api/get-jsons')
+def get_jsons():
+    """Get list of JSON files from folder"""
+    folder = request.args.get('folder')
+    if not folder:
+        folder = backend.xml_folder  # Use same folder structure for now
+    
+    if not folder or not os.path.exists(folder):
+        return jsonify({'error': 'Folder not found'}), 404
+    
+    jsons = []
+    try:
+        for filename in os.listdir(folder):
+            if filename.lower().endswith('.json'):
+                jsons.append(filename)
+        return jsonify({'jsons': sorted(jsons)})
+    except Exception as e:
+        logger.error(f"Error reading JSON folder: {e}")
+        return jsonify({'error': 'Failed to read folder'}), 500
+
 @app.route('/api/load-config', methods=['POST'])
 def load_config():
     """Load configuration file"""
@@ -305,6 +399,25 @@ def get_xml(filename):
     else:
         return jsonify({'error': 'XML file not found'}), 404
 
+@app.route('/api/get-json/<filename>')
+def get_json(filename):
+    """Get JSON data for specific image"""
+    if not backend.xml_folder:  # Use same folder structure for now
+        return jsonify({'error': 'JSON folder not set'}), 400
+    
+    # Find JSON file with same basename as image
+    image_basename = os.path.splitext(filename)[0]
+    json_path = os.path.join(backend.xml_folder, f"{image_basename}.json")
+    
+    if os.path.exists(json_path):
+        json_data = backend.read_json_file(json_path)
+        if json_data:
+            return jsonify(json_data)
+        else:
+            return jsonify({'error': 'Failed to read JSON file'}), 500
+    else:
+        return jsonify({'error': 'JSON file not found'}), 404
+
 @app.route('/api/xml/<filename>')
 def get_raw_xml(filename):
     """Get raw XML content for specific image"""
@@ -326,6 +439,27 @@ def get_raw_xml(filename):
     else:
         return "XML file not found", 404
 
+@app.route('/api/json/<filename>')
+def get_raw_json(filename):
+    """Get raw JSON content for specific image"""
+    if not backend.xml_folder:  # Use same folder structure for now
+        return "JSON folder not set", 400
+    
+    # Find JSON file with same basename as image
+    image_basename = os.path.splitext(filename)[0]
+    json_path = os.path.join(backend.xml_folder, f"{image_basename}.json")
+    
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, 'r', encoding='utf-8') as file:
+                json_content = file.read()
+            return json_content, 200, {'Content-Type': 'application/json'}
+        except Exception as e:
+            logger.error(f"Error reading JSON file: {e}")
+            return f"Error reading JSON file: {e}", 500
+    else:
+        return "JSON file not found", 404
+
 @app.route('/api/save-xml', methods=['POST'])
 def save_xml():
     """Save XML data"""
@@ -344,6 +478,25 @@ def save_xml():
         return jsonify({'success': True})
     else:
         return jsonify({'error': 'Failed to save XML file'}), 500
+
+@app.route('/api/save-json', methods=['POST'])
+def save_json():
+    """Save JSON data"""
+    data = request.json
+    filename = data.get('filename')
+    json_content = data.get('json_content')
+    
+    if not backend.xml_folder or not filename or not json_content:  # Use same folder structure for now
+        return jsonify({'error': 'Missing required parameters'}), 400
+    
+    # Find JSON file path
+    image_basename = os.path.splitext(filename)[0]
+    json_path = os.path.join(backend.xml_folder, f"{image_basename}.json")
+    
+    if backend.write_json_file(json_path, json_content):
+        return jsonify({'success': True})
+    else:
+        return jsonify({'error': 'Failed to save JSON file'}), 500
 
 @app.route('/api/update-attributes', methods=['POST'])
 def update_attributes():
@@ -375,6 +528,58 @@ def serve_image(filename):
         return send_from_directory(backend.image_folder, filename)
     else:
         return jsonify({'error': 'Image folder not set'}), 400
+
+@app.route('/api/get-class-names', methods=['GET'])
+def get_class_names():
+    """Get all existing class names from XML files in the folder"""
+    if not backend.xml_folder:
+        return jsonify({'error': 'XML folder not set'}), 400
+    
+    class_names = set()
+    
+    try:
+        # Read all XML files in the folder
+        for file_path in Path(backend.xml_folder).iterdir():
+            if file_path.suffix.lower() == '.xml':
+                try:
+                    # Check if file is empty
+                    if file_path.stat().st_size == 0:
+                        logger.info(f"Skipping empty XML file: {file_path}")
+                        continue
+                        
+                    tree = ET.parse(file_path)
+                    root = tree.getroot()
+                    
+                    # Extract class names from object elements
+                    for obj in root.findall('object'):
+                        name_elem = obj.find('name')
+                        if name_elem is not None and name_elem.text:
+                            class_names.add(name_elem.text.strip())
+                            
+                except ET.ParseError as e:
+                    logger.warning(f"Error parsing XML file {file_path}: {e}")
+                    continue
+                except Exception as e:
+                    logger.warning(f"Error reading XML file {file_path}: {e}")
+                    continue
+        
+        # Also check for classes.txt file
+        classes_file = Path(backend.xml_folder) / 'classes.txt'
+        if classes_file.exists():
+            try:
+                with open(classes_file, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if line and not line.startswith('#'):
+                            class_names.add(line)
+            except Exception as e:
+                logger.warning(f"Error reading classes.txt: {e}")
+        
+        return jsonify({'class_names': sorted(list(class_names))})
+        
+    except Exception as e:
+        logger.error(f"Error getting class names: {e}")
+        return jsonify({'error': 'Failed to get class names'}), 500
 
 @app.route('/api/export-report', methods=['POST'])
 def export_report():
@@ -413,3 +618,4 @@ def export_report():
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=5000)
+

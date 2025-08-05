@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<annotation>
+  <folder>test</folder>
+  <filename>test_image.jpg</filename>
+  <path>test_image.jpg</path>
+  <source>
+    <database>Unknown</database>
+  </source>
+  <size>
+    <width>800</width>
+    <height>600</height>
+    <depth>3</depth>
+  </size>
+  <segmented>0</segmented>
+  
+  <!-- Bounding box example -->
+  <object>
+    <name>car</name>
+    <pose>Unspecified</pose>
+    <truncated>0</truncated>
+    <difficult>0</difficult>
+    <bndbox>
+      <xmin>100</xmin>
+      <ymin>150</ymin>
+      <xmax>300</xmax>
+      <ymax>250</ymax>
+    </bndbox>
+  </object>
+  
+  <!-- Polygon example - triangle -->
+  <object>
+    <name>triangle</name>
+    <pose>Unspecified</pose>
+    <truncated>0</truncated>
+    <difficult>0</difficult>
+    <polygon>400,100,500,300,300,300</polygon>
+  </object>
+  
+  <!-- Segmentation example - pentagon -->
+  <object>
+    <name>pentagon</name>
+    <pose>Unspecified</pose>
+    <truncated>0</truncated>
+    <difficult>0</difficult>
+    <segmentation>600,50,700,100,680,200,520,200,500,100</segmentation>
+  </object>
+</annotation>
