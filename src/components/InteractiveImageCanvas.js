@@ -283,7 +283,7 @@ const StatusBadge = styled.span`
   font-weight: 600;
 `;
 
-const InteractiveImageCanvas = ({ currentImage, xmlData, qcType, onXmlUpdate, selectedConfig, onMouseMove, onSelectedObjectChange, selectedObjectId, selectionSource }) => {
+const InteractiveImageCanvas = ({ currentImage, xmlData, qcType, onXmlUpdate, selectedConfig, onMouseMove, onSelectedObjectChange, selectedObjectId, isSelectionLocked, setIsSelectionLocked }) => {
   const [imageSize, setImageSize] = useState({ width: 0, height: 0 });
   const [displaySize, setDisplaySize] = useState({ width: 0, height: 0, visibleWidth: 0, visibleHeight: 0, paddingX: 0, paddingY: 0, objectFit: 'contain' });
   const [boundingBoxes, setBoundingBoxes] = useState([]);
@@ -337,39 +337,86 @@ const InteractiveImageCanvas = ({ currentImage, xmlData, qcType, onXmlUpdate, se
 
   // Notify parent about selected object changes
   useEffect(() => {
-    let selectedObject = null;
-    
-    if (selectedBox !== null && boundingBoxes[selectedBox]) {
-      selectedObject = boundingBoxes[selectedBox];
-    } else if (selectedPolygon !== null && polygons[selectedPolygon]) {
-      selectedObject = polygons[selectedPolygon];
+    // Only notify parent if selection is not locked (prevents circular updates during auto-save)
+    if (isSelectionLocked) {
+      console.log('Selection locked - not notifying parent of selection change');
+      return;
     }
     
-    if (onSelectedObjectChange) {
-      onSelectedObjectChange(selectedObject);
-    }
-  }, [selectedBox, selectedPolygon, boundingBoxes, polygons, onSelectedObjectChange]);
-
-  // Handle external object selection from AttributePanel
-  useEffect(() => {
-    if (selectionSource === 'panel' && selectedObjectId !== null && selectedObjectId !== undefined) {
-      // Find the object by ID in boundingBoxes or polygons
-      const boxIndex = boundingBoxes.findIndex(box => box.id === selectedObjectId);
-      const polygonIndex = polygons.findIndex(polygon => polygon.id === selectedObjectId);
+    // Add a debounce delay to prevent rapid fire parent notifications
+    const timeoutId = setTimeout(() => {
+      let selectedObject = null;
       
-      if (boxIndex !== -1) {
-        setSelectedBox(selectedObjectId);
-        setSelectedPolygon(null);
-      } else if (polygonIndex !== -1) {
-        setSelectedPolygon(selectedObjectId);
-        setSelectedBox(null);
+      if (selectedBox !== null) {
+        // Find the box by ID, not by array index
+        selectedObject = boundingBoxes.find(box => box.id === selectedBox);
+      } else if (selectedPolygon !== null) {
+        // Find the polygon by ID, not by array index
+        selectedObject = polygons.find(polygon => polygon.id === selectedPolygon);
       }
-    } else if (selectedObjectId === null) {
-      // Clear selection if no object is selected externally
-      setSelectedBox(null);
-      setSelectedPolygon(null);
+      
+      if (onSelectedObjectChange) {
+        console.log('Notifying parent of selection change:', selectedObject?.id || 'null');
+        onSelectedObjectChange(selectedObject);
+      }
+    }, 100); // 100ms debounce
+    
+    return () => clearTimeout(timeoutId);
+  }, [selectedBox, selectedPolygon, boundingBoxes, polygons, onSelectedObjectChange, isSelectionLocked]);
+
+  // Handle external object selection from AttributePanel - but prevent circular updates
+  useEffect(() => {
+    console.log('External selection effect triggered - selectedObjectId:', selectedObjectId, 'isSelectionLocked:', isSelectionLocked);
+    console.log('Current canvas state - selectedBox:', selectedBox, 'selectedPolygon:', selectedPolygon);
+    
+    // Don't update canvas selection if it's locked
+    if (isSelectionLocked) {
+      console.log('Selection locked - not updating canvas selection from external');
+      return;
     }
-  }, [selectedObjectId, boundingBoxes, polygons, selectionSource]);
+
+    // Use a small delay to allow click handlers to complete first
+    const timeoutId = setTimeout(() => {
+      if (selectedObjectId !== null && selectedObjectId !== undefined) {
+        // Check if we're already showing the correct selection
+        const isBoxAlreadySelected = selectedBox === selectedObjectId;
+        const isPolygonAlreadySelected = selectedPolygon === selectedObjectId;
+        
+        if (isBoxAlreadySelected || isPolygonAlreadySelected) {
+          console.log('Canvas already showing correct selection:', selectedObjectId);
+          return;
+        }
+        
+        // Find the object by ID in boundingBoxes or polygons
+        const boxIndex = boundingBoxes.findIndex(box => box.id === selectedObjectId);
+        const polygonIndex = polygons.findIndex(polygon => polygon.id === selectedObjectId);
+        
+        console.log('Looking for object with ID:', selectedObjectId);
+        console.log('Found in boxes at index:', boxIndex, 'Found in polygons at index:', polygonIndex);
+        console.log('Available boxes:', boundingBoxes.map(b => ({ id: b.id, name: b.name })));
+        console.log('Available polygons:', polygons.map(p => ({ id: p.id, name: p.name })));
+        
+        if (boxIndex !== -1) {
+          console.log('Setting canvas selection to box:', selectedObjectId);
+          setSelectedBox(selectedObjectId);
+          setSelectedPolygon(null);
+        } else if (polygonIndex !== -1) {
+          console.log('Setting canvas selection to polygon:', selectedObjectId);
+          setSelectedPolygon(selectedObjectId);
+          setSelectedBox(null);
+        } else {
+          console.log('External selection not found in canvas objects:', selectedObjectId);
+        }
+      } else if (selectedObjectId === null) {
+        // Clear selection if no object is selected externally
+        console.log('Clearing canvas selection from external');
+        setSelectedBox(null);
+        setSelectedPolygon(null);
+      }
+    }, 50); // 50ms delay to allow click handlers to complete
+
+    return () => clearTimeout(timeoutId);
+  }, [selectedObjectId, boundingBoxes, polygons, isSelectionLocked]);
 
   const imageRef = useRef(null);
   const containerRef = useRef(null);
@@ -410,6 +457,7 @@ const InteractiveImageCanvas = ({ currentImage, xmlData, qcType, onXmlUpdate, se
           setImageOffset({ x: 0, y: 0 });
         }
         
+
         // Show zoom indicator temporarily
         setShowZoomIndicator(true);
         setTimeout(() => setShowZoomIndicator(false), 1500);
@@ -505,6 +553,44 @@ const InteractiveImageCanvas = ({ currentImage, xmlData, qcType, onXmlUpdate, se
         bndboxElement.appendChild(xmax);
         bndboxElement.appendChild(ymax);
         objElement.appendChild(bndboxElement);
+        
+        // Preserve only relevant custom attributes from the original XML element
+        if (box.element && selectedConfig?.asset_type?.attributes) {
+          // Get list of valid attribute names for the current asset type
+          const validAttributeNames = Object.keys(selectedConfig.asset_type.attributes);
+          console.log('Valid attributes for', selectedConfig.asset_type.name, ':', validAttributeNames);
+          
+          // Get all child elements from the original element
+          for (let i = 0; i < box.element.children.length; i++) {
+            const child = box.element.children[i];
+            const attributeName = child.tagName;
+            
+            // Skip name and bndbox as we already added them, also skip latLng for special handling
+            if (attributeName !== 'name' && attributeName !== 'bndbox' && attributeName !== 'latLng') {
+              // Only preserve this attribute if it's valid for the current asset type
+              if (validAttributeNames.includes(attributeName)) {
+                // Clone the entire element with its content
+                const clonedElement = xmlDoc.createElement(child.tagName);
+                clonedElement.textContent = child.textContent;
+                objElement.appendChild(clonedElement);
+                console.log('Preserved valid attribute:', attributeName, '=', child.textContent);
+              } else {
+                console.log('Skipped invalid attribute for current asset type:', attributeName);
+              }
+            }
+          }
+        } else if (box.element) {
+          // Fallback: preserve all attributes if no asset config is available
+          console.log('No asset config available, preserving all attributes');
+          for (let i = 0; i < box.element.children.length; i++) {
+            const child = box.element.children[i];
+            if (child.tagName !== 'name' && child.tagName !== 'bndbox' && child.tagName !== 'latLng') {
+              const clonedElement = xmlDoc.createElement(child.tagName);
+              clonedElement.textContent = child.textContent;
+              objElement.appendChild(clonedElement);
+            }
+          }
+        }
         
         // Add lat/lng if available
         if (box.latLng && Array.isArray(box.latLng) && box.latLng.length >= 2) {
@@ -949,13 +1035,26 @@ const InteractiveImageCanvas = ({ currentImage, xmlData, qcType, onXmlUpdate, se
     e.stopPropagation();
     e.preventDefault();
     
-    console.log('Box clicked:', boxId, 'isDragging:', isDragging, 'isResizing:', isResizing);
+    console.log('Box clicked:', boxId, 'isDragging:', isDragging, 'isResizing:', isResizing, 'isSelectionLocked:', isSelectionLocked);
+    console.log('Current selectedBox:', selectedBox, 'Current selectedPolygon:', selectedPolygon);
+    console.log('Available boxes:', boundingBoxes.map(b => ({ id: b.id, name: b.name })));
+    
+    // Don't allow selection changes if selection is locked (during auto-save)
+    if (isSelectionLocked) {
+      console.log('Selection locked - ignoring box click');
+      return;
+    }
     
     // Only select if not currently dragging or resizing
     if (!isDragging && !isResizing) {
-      setSelectedBox(boxId);
-      setSelectedPolygon(null); // Deselect polygon when selecting box
-      console.log('Selected box:', boxId);
+      console.log('Setting selectedBox to:', boxId);
+      
+      // Use setTimeout to ensure this selection happens after any external selection effects
+      setTimeout(() => {
+        setSelectedBox(boxId);
+        setSelectedPolygon(null); // Deselect polygon when selecting box
+        console.log('Selected box after timeout:', boxId);
+      }, 10);
     }
   };
 
@@ -963,13 +1062,26 @@ const InteractiveImageCanvas = ({ currentImage, xmlData, qcType, onXmlUpdate, se
     e.stopPropagation();
     e.preventDefault();
     
-    console.log('Polygon clicked:', polygonId);
+    console.log('Polygon clicked:', polygonId, 'isSelectionLocked:', isSelectionLocked);
+    console.log('Current selectedBox:', selectedBox, 'Current selectedPolygon:', selectedPolygon);
+    console.log('Available polygons:', polygons.map(p => ({ id: p.id, name: p.name })));
+    
+    // Don't allow selection changes if selection is locked (during auto-save)
+    if (isSelectionLocked) {
+      console.log('Selection locked - ignoring polygon click');
+      return;
+    }
     
     // Only select if not currently dragging or resizing
     if (!isDragging && !isResizing && !isDraggingPolygonPoint) {
-      setSelectedPolygon(polygonId);
-      setSelectedBox(null); // Deselect box when selecting polygon
-      console.log('Selected polygon:', polygonId);
+      console.log('Setting selectedPolygon to:', polygonId);
+      
+      // Use setTimeout to ensure this selection happens after any external selection effects
+      setTimeout(() => {
+        setSelectedPolygon(polygonId);
+        setSelectedBox(null); // Deselect box when selecting polygon
+        console.log('Selected polygon after timeout:', polygonId);
+      }, 10);
     }
   };
 
@@ -1338,16 +1450,20 @@ const InteractiveImageCanvas = ({ currentImage, xmlData, qcType, onXmlUpdate, se
 
   // Remove point from selected polygon
   const removePolygonPoint = (pointIndex) => {
-    if (selectedPolygon === null || !polygons[selectedPolygon]) return;
+    if (selectedPolygon === null) return;
     
-    const polygon = polygons[selectedPolygon];
+    // Find the polygon by ID, not by array index
+    const polygonIndex = polygons.findIndex(p => p.id === selectedPolygon);
+    if (polygonIndex === -1) return;
+    
+    const polygon = polygons[polygonIndex];
     if (polygon.points.length <= 3) {
       console.log('Cannot remove point: polygon must have at least 3 points');
       return;
     }
     
     const updatedPolygons = [...polygons];
-    updatedPolygons[selectedPolygon] = {
+    updatedPolygons[polygonIndex] = {
       ...polygon,
       points: polygon.points.filter((_, index) => index !== pointIndex)
     };
@@ -1356,8 +1472,10 @@ const InteractiveImageCanvas = ({ currentImage, xmlData, qcType, onXmlUpdate, se
     // Update JSON data
     if (xmlData && xmlData.shapes) {
       const updatedJsonData = { ...xmlData };
-      if (updatedJsonData.shapes[selectedPolygon]) {
-        updatedJsonData.shapes[selectedPolygon].points = updatedPolygons[selectedPolygon].points;
+      // Find the shape index by matching the polygon ID
+      const shapeIndex = polygonIndex; // Assuming shapes array corresponds to polygons array
+      if (updatedJsonData.shapes[shapeIndex]) {
+        updatedJsonData.shapes[shapeIndex].points = updatedPolygons[polygonIndex].points;
         saveUpdatedJSON(updatedJsonData);
       }
     }
@@ -2088,15 +2206,24 @@ const InteractiveImageCanvas = ({ currentImage, xmlData, qcType, onXmlUpdate, se
       return; // Let creation handlers manage this
     }
     
+    // Don't deselect if selection is locked (during auto-save)
+    if (isSelectionLocked) {
+      console.log('Selection locked - preventing deselection');
+      return;
+    }
+    
     // Deselect if clicking on container or image (but not on bounding boxes or during canvas drag)
     const isClickOnContainer = e.target === e.currentTarget;
     const isClickOnImage = e.target === imageRef.current;
     const isNotInteracting = !isDragging && !isResizing && !isDraggingCanvas && !isDraggingPolygonPoint && !isDraggingPolygon;
     
     if ((isClickOnContainer || isClickOnImage) && isNotInteracting) {
-      setSelectedBox(null);
-      setSelectedPolygon(null);
-      console.log('Deselected all boxes and polygons - clicked outside');
+      // Add a small delay to allow object clicks to register first
+      setTimeout(() => {
+        setSelectedBox(null);
+        setSelectedPolygon(null);
+        console.log('Deselected all boxes and polygons - clicked outside after delay');
+      }, 100);
     }
   };
 
@@ -2105,6 +2232,12 @@ const InteractiveImageCanvas = ({ currentImage, xmlData, qcType, onXmlUpdate, se
     // Handle polygon creation mode
     if (isCreatingPolygon) {
       handleCreationMouseDown(e);
+      return;
+    }
+    
+    // Don't deselect if selection is locked (during auto-save)
+    if (isSelectionLocked) {
+      console.log('Selection locked - preventing image click deselection');
       return;
     }
     

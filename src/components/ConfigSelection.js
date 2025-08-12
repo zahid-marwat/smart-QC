@@ -112,6 +112,16 @@ const OptionDescription = styled.p`
   line-height: 1.4;
 `;
 
+const LoadingMessage = styled.div`
+  text-align: center;
+  padding: 20px;
+  background: var(--light-gray);
+  border-radius: 12px;
+  margin-top: 20px;
+  font-size: 16px;
+  color: var(--text-black);
+`;
+
 const ContinueButton = styled.button`
   background: var(--secondary-yellow);
   color: var(--text-black);
@@ -142,6 +152,8 @@ const ConfigSelection = ({ folders, onConfigSelected, onBack }) => {
   const [selectedAssetType, setSelectedAssetType] = useState(null);
   const [assetConfig, setAssetConfig] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [savingDefaults, setSavingDefaults] = useState(false);
+  const [saveMessage, setSaveMessage] = useState('');
 
   useEffect(() => {
     loadAssetConfig();
@@ -174,7 +186,7 @@ const ConfigSelection = ({ folders, onConfigSelected, onBack }) => {
     setSelectedAssetType(assetTypeKey);
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     if (selectedQCType && selectedAssetType && assetConfig) {
       const qcType = assetConfig.qc_types[selectedQCType];
       const assetType = qcType.asset_types[selectedAssetType];
@@ -195,7 +207,48 @@ const ConfigSelection = ({ folders, onConfigSelected, onBack }) => {
       };
       
       console.log('ConfigSelection: Selected configuration:', configData);
-      onConfigSelected(configData);
+      
+      // Save default attributes for all files in the label folder
+      setSavingDefaults(true);
+      setSaveMessage('Processing existing annotation files with default attributes...');
+      
+      try {
+        console.log('ConfigSelection: Saving default attributes for existing annotation files...');
+        const response = await fetch('http://localhost:5000/api/save-default-attributes', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            folderPath: qcType.file_format === 'xml' ? folders.xmls : folders.xmls, // Annotation folder path
+            imagesFolderPath: folders.images, // Images folder path
+            qcType: selectedQCType,
+            assetType: selectedAssetType,
+            fileFormat: qcType.file_format
+          })
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          console.log('ConfigSelection: Successfully processed default attributes:', result);
+          setSaveMessage(`✅ Successfully processed ${result.files_processed} annotation files and updated ${result.files_updated} files with default attributes for ${assetType.name}`);
+          
+          // Wait a moment to show the success message
+          setTimeout(() => {
+            setSavingDefaults(false);
+            onConfigSelected(configData);
+          }, 2000);
+        } else {
+          const errorText = await response.text();
+          console.error('ConfigSelection: Failed to save default attributes:', errorText);
+          setSaveMessage('❌ Failed to process annotation files. Please check your folder permissions.');
+          setTimeout(() => setSavingDefaults(false), 3000);
+        }
+      } catch (error) {
+        console.error('ConfigSelection: Error processing default attributes:', error);
+        setSaveMessage('❌ Error connecting to backend. Please ensure the server is running.');
+        setTimeout(() => setSavingDefaults(false), 3000);
+      }
     }
   };
 
@@ -284,9 +337,17 @@ const ConfigSelection = ({ folders, onConfigSelected, onBack }) => {
         )}
 
         {selectedQCType && selectedAssetType && (
-          <ContinueButton onClick={handleContinue}>
-            Start Quality Control Analysis
-          </ContinueButton>
+          <>
+            <ContinueButton onClick={handleContinue} disabled={savingDefaults}>
+              {savingDefaults ? 'Initializing...' : 'Start Quality Control Analysis'}
+            </ContinueButton>
+            
+            {savingDefaults && (
+              <LoadingMessage>
+                {saveMessage}
+              </LoadingMessage>
+            )}
+          </>
         )}
       </StepContainer>
     </Container>

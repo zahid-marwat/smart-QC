@@ -581,6 +581,176 @@ def get_class_names():
         logger.error(f"Error getting class names: {e}")
         return jsonify({'error': 'Failed to get class names'}), 500
 
+@app.route('/api/save-default-attributes', methods=['POST'])
+def save_default_attributes():
+    """Save default attributes for existing annotation files in the label folder"""
+    data = request.json
+    folder_path = data.get('folderPath')
+    images_folder_path = data.get('imagesFolderPath')  # Separate images folder path
+    qc_type = data.get('qcType')
+    asset_type = data.get('assetType')
+    file_format = data.get('fileFormat', 'xml')
+    
+    if not folder_path or not os.path.exists(folder_path):
+        return jsonify({'error': 'Invalid annotation folder path'}), 400
+    
+    if not qc_type or not asset_type:
+        return jsonify({'error': 'Missing required parameters'}), 400
+    
+    # Load asset configuration from file
+    try:
+        config_path = r'c:\Users\z-pc\Desktop\smart-QC\public\config\asset_config.json'
+        logger.info(f"Loading asset config from: {config_path}")
+        with open(config_path, 'r') as f:
+            asset_config = json.load(f)
+        logger.info(f"Loaded asset config: {list(asset_config.keys())}")
+        
+        if asset_type not in asset_config['qc_types'][qc_type]['asset_types']:
+            return jsonify({'error': f'Asset type {asset_type} not found in configuration for {qc_type}'}), 400
+        
+        asset_attributes = asset_config['qc_types'][qc_type]['asset_types'][asset_type].get('attributes', {})
+        if not asset_attributes:
+            return jsonify({'error': f'No attributes defined for asset type {asset_type}'}), 400
+        
+        # Convert attributes dict to list format for processing
+        asset_attributes_list = []
+        for attr_name, attr_config in asset_attributes.items():
+            asset_attributes_list.append({
+                'name': attr_name,
+                'default': attr_config.get('default', ''),
+                'type': attr_config.get('type', 'text'),
+                'required': attr_config.get('required', False)
+            })
+            
+    except Exception as e:
+        logger.error(f"Error loading asset configuration: {e}")
+        return jsonify({'error': 'Failed to load asset configuration'}), 500
+
+    try:
+        files_processed = 0
+        files_updated = 0
+        errors = []
+        
+        logger.info(f"Processing existing annotation files for {asset_type} in {qc_type} mode")
+        logger.info(f"Annotation folder: {folder_path}")
+        logger.info(f"Images folder: {images_folder_path}")
+        logger.info(f"File format: {file_format}")
+        
+        if file_format == 'xml':
+            # Process existing XML files only
+            for file_path in Path(folder_path).iterdir():
+                if file_path.suffix.lower() == '.xml' and file_path.stat().st_size > 0:
+                    try:
+                        # Read existing XML file
+                        tree = ET.parse(file_path)
+                        root = tree.getroot()
+                        
+                        # Check if this XML has any objects
+                        objects = root.findall('object')
+                        if len(objects) > 0:
+                            logger.info(f"Processing XML file with {len(objects)} objects: {file_path}")
+                            
+                            # Process each object in the XML
+                            for obj in objects:
+                                # Add default attributes if they don't exist
+                                for attr_config in asset_attributes_list:
+                                    attr_name = attr_config['name']
+                                    attr_elem = obj.find(attr_name)
+                                    if attr_elem is None:
+                                        # Add new attribute with default value
+                                        attr_elem = ET.SubElement(obj, attr_name)
+                                        default_value = attr_config.get('default', '')
+                                        attr_elem.text = str(default_value)
+                                        logger.info(f"Added attribute {attr_name}={default_value} to object in {file_path.name}")
+                                    
+                            # Write updated XML back to file
+                            ET.indent(tree, space="  ", level=0)
+                            tree.write(file_path, encoding='utf-8', xml_declaration=True)
+                            files_updated += 1
+                        else:
+                            logger.info(f"Skipping XML file with no objects: {file_path}")
+                        
+                        files_processed += 1
+                        
+                    except Exception as e:
+                        error_msg = f"Error processing XML {file_path.name}: {str(e)}"
+                        errors.append(error_msg)
+                        logger.error(error_msg)
+                        
+        elif file_format == 'json':
+            # Process existing JSON files only
+            for file_path in Path(folder_path).iterdir():
+                if file_path.suffix.lower() == '.json' and file_path.stat().st_size > 0:
+                    try:
+                        # Read existing JSON file
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            json_data = json.load(f)
+                        
+                        # Check if this JSON has any shapes
+                        shapes = json_data.get('shapes', [])
+                        if len(shapes) > 0:
+                            logger.info(f"Processing JSON file with {len(shapes)} shapes: {file_path}")
+                            
+                            # Process each shape in the JSON
+                            for shape in shapes:
+                                # Add default attributes if they don't exist
+                                for attr_config in asset_attributes_list:
+                                    attr_name = attr_config['name']
+                                    if attr_name not in shape:
+                                        # Add new attribute with default value
+                                        default_value = attr_config.get('default', '')
+                                        shape[attr_name] = str(default_value)
+                                        logger.info(f"Added attribute {attr_name}={default_value} to shape in {file_path.name}")
+                            
+                            # Write updated JSON back to file
+                            with open(file_path, 'w', encoding='utf-8') as f:
+                                json.dump(json_data, f, indent=2, ensure_ascii=False)
+                            files_updated += 1
+                        else:
+                            logger.info(f"Skipping JSON file with no shapes: {file_path}")
+                        
+                        files_processed += 1
+                        
+                    except Exception as e:
+                        error_msg = f"Error processing JSON {file_path.name}: {str(e)}"
+                        errors.append(error_msg)
+                        logger.error(error_msg)
+        
+        # Create a summary file with the selected configuration
+        config_summary = {
+            "qc_type": qc_type,
+            "asset_type": asset_type,
+            "attributes": asset_attributes_list,
+            "file_format": file_format,
+            "timestamp": str(Path().cwd()),
+            "files_processed": files_processed,
+            "files_updated": files_updated,
+            "annotation_folder": folder_path,
+            "images_folder": images_folder_path
+        }
+        
+        config_path = Path(folder_path) / f"{qc_type}_{asset_type}_config.json"
+        try:
+            with open(config_path, 'w', encoding='utf-8') as f:
+                json.dump(config_summary, f, indent=2, ensure_ascii=False)
+            logger.info(f"Created configuration summary: {config_path}")
+        except Exception as e:
+            logger.warning(f"Failed to create config summary: {e}")
+        
+        message = f"Successfully processed {files_processed} annotation files and updated {files_updated} files with default attributes for {asset_type} in {qc_type} mode"
+        
+        return jsonify({
+            'success': True,
+            'files_processed': files_processed,
+            'files_updated': files_updated,
+            'errors': errors,
+            'message': message
+        })
+        
+    except Exception as e:
+        logger.error(f"Error processing default attributes: {e}")
+        return jsonify({'error': f'Failed to process default attributes: {str(e)}'}), 500
+
 @app.route('/api/export-report', methods=['POST'])
 def export_report():
     """Export QC report"""

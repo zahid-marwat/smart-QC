@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import styled from 'styled-components';
 import Header from './components/Header';
 import FolderSelection from './components/FolderSelection';
@@ -69,11 +69,57 @@ function App() {
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
   const [selectedObject, setSelectedObject] = useState(null);
   const [selectedObjectId, setSelectedObjectId] = useState(null); // ID for attribute panel selection
-  const [selectionSource, setSelectionSource] = useState(null); // Track selection source to prevent loops
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [autoSaveTimeout, setAutoSaveTimeout] = useState(null);
+  const [isSelectionLocked, setIsSelectionLocked] = useState(false);
   const imageViewerRef = useRef(null);
   const canvasRef = useRef(null);
   const attributePanelRef = useRef(null);
+
+  // Auto-save functionality with 3-second delay
+  useEffect(() => {
+    if (hasUnsavedChanges) {
+      // Clear existing timeout
+      if (autoSaveTimeout) {
+        clearTimeout(autoSaveTimeout);
+      }
+      
+      // Set new timeout for 3 seconds
+      const timeout = setTimeout(() => {
+        if (attributePanelRef.current) {
+          console.log('Auto-saving after 3 seconds...');
+          attributePanelRef.current.saveChanges();
+          setHasUnsavedChanges(false);
+        }
+      }, 3000);
+      
+      setAutoSaveTimeout(timeout);
+    }
+    
+    // Cleanup timeout on unmount
+    return () => {
+      if (autoSaveTimeout) {
+        clearTimeout(autoSaveTimeout);
+      }
+    };
+  }, [hasUnsavedChanges, autoSaveTimeout]);
+
+  // Ctrl+S keyboard shortcut
+  useEffect(() => {
+    const handleKeyDown = (event) => {
+      if (event.ctrlKey && event.key === 's') {
+        event.preventDefault();
+        if (attributePanelRef.current) {
+          console.log('Manual save triggered (Ctrl+S)');
+          attributePanelRef.current.saveChanges();
+          setHasUnsavedChanges(false);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   const handleFoldersSelected = (folderData) => {
     setFolders(folderData);
@@ -96,14 +142,23 @@ function App() {
   const handleImageSelected = (image, xmlContent) => {
     // Auto-save before changing images if there are unsaved changes
     if (hasUnsavedChanges && attributePanelRef.current) {
+      console.log('Auto-saving before image change...');
       attributePanelRef.current.saveChanges();
+    }
+    
+    // Clear auto-save timeout when changing images
+    if (autoSaveTimeout) {
+      clearTimeout(autoSaveTimeout);
+      setAutoSaveTimeout(null);
     }
     
     setCurrentImage(image);
     setXmlData(xmlContent);
+    // Temporarily reset selection - AttributePanel will manage selecting appropriate object
     setSelectedObjectId(null);
     setSelectedObject(null);
     setHasUnsavedChanges(false);
+    setIsSelectionLocked(false);
   };
 
   const handleXmlUpdate = (updatedXml) => {
@@ -120,27 +175,19 @@ function App() {
   };
 
   const handleSelectedObjectChange = (object) => {
-    if (selectionSource !== 'canvas') {
-      setSelectionSource('canvas');
-      setSelectedObject(object);
-      // Set the selected object ID for attribute panel
-      if (object) {
-        setSelectedObjectId(object.id);
-      } else {
-        setSelectedObjectId(null);
-      }
-      setTimeout(() => setSelectionSource(null), 100); // Reset after a short delay
+    if (isSelectionLocked) return;
+    
+    setSelectedObject(object);
+    // Set the selected object ID for attribute panel
+    if (object) {
+      setSelectedObjectId(object.id);
+    } else {
+      setSelectedObjectId(null);
     }
   };
 
   const handleAttributePanelObjectSelect = (objectId) => {
-    // Since we removed object selection from the list, this function may not be needed
-    // But keeping it for potential future use
-    if (selectionSource !== 'canvas') {
-      setSelectionSource('panel');
-      setSelectedObjectId(objectId);
-      setTimeout(() => setSelectionSource(null), 100); // Reset after a short delay
-    }
+    setSelectedObjectId(objectId);
   };
 
   const handleAttributeChange = (hasChanges) => {
@@ -211,7 +258,8 @@ function App() {
                 onMouseMove={handleMouseMove}
                 onSelectedObjectChange={handleSelectedObjectChange}
                 selectedObjectId={selectedObjectId}
-                selectionSource={selectionSource}
+                isSelectionLocked={isSelectionLocked}
+                setIsSelectionLocked={setIsSelectionLocked}
               />
             </CenterPanel>
             
@@ -226,7 +274,7 @@ function App() {
                 selectedObjectId={selectedObjectId}
                 onObjectSelect={handleAttributePanelObjectSelect}
                 onAttributeChange={handleAttributeChange}
-                selectionSource={selectionSource}
+                setIsSelectionLocked={setIsSelectionLocked}
               />
             </RightPanel>
           </MainContent>

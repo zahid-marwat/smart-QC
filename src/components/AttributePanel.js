@@ -352,7 +352,7 @@ const ObjectTag = styled.div`
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 `;
 
-const AttributePanel = forwardRef(({ selectedConfig, xmlData, currentImage, qcType, onAttributeUpdate, selectedObjectId, onObjectSelect, onAttributeChange, selectionSource }, ref) => {
+const AttributePanel = forwardRef(({ selectedConfig, xmlData, currentImage, qcType, onAttributeUpdate, selectedObjectId, onObjectSelect, onAttributeChange, setIsSelectionLocked }, ref) => {
   const [attributes, setAttributes] = useState({});
   const [existingObjects, setExistingObjects] = useState([]);
   const [status, setStatus] = useState(null);
@@ -375,15 +375,20 @@ const AttributePanel = forwardRef(({ selectedConfig, xmlData, currentImage, qcTy
 
   // Handle external object selection changes (from canvas)
   useEffect(() => {
-    if (selectionSource === 'canvas' && selectedObjectId !== null && selectedObjectId !== undefined && existingObjects.length > 0) {
+    if (selectedObjectId !== null && selectedObjectId !== undefined && existingObjects.length > 0) {
       const selectedObj = existingObjects.find(obj => obj.id === selectedObjectId);
       if (selectedObj) {
         const mergedAttributes = mergeAttributesWithDefaults(selectedObj.customAttributes);
         setAttributes(mergedAttributes);
         setHasChanges(false);
+        
+        // Auto-save default attributes if the object has none
+        setTimeout(() => {
+          autoSaveDefaultAttributes();
+        }, 100); // Small delay to ensure state is updated
       }
     }
-  }, [selectedObjectId, existingObjects, selectionSource]);
+  }, [selectedObjectId, existingObjects]);
 
   useEffect(() => {
     if (xmlData && selectedConfig && currentImage) {
@@ -466,13 +471,17 @@ const AttributePanel = forwardRef(({ selectedConfig, xmlData, currentImage, qcTy
 
           // Extract custom attributes (excluding standard ones)
           const customAttrs = {};
-          const standardTags = ['name', 'bndbox', 'latLng'];
+          const standardTags = ['name', 'pose', 'truncated', 'difficult', 'bndbox', 'polygon', 'latLng'];
           
+          // First, extract attributes that are defined in the config
           if (selectedConfig?.asset_type?.attributes) {
             Object.keys(selectedConfig.asset_type.attributes).forEach(attrName => {
               const element = obj.getElementsByTagName(attrName)[0];
-              if (element) {
+              if (element && element.textContent) {
                 customAttrs[attrName] = element.textContent;
+              } else {
+                // Use default value from config if attribute doesn't exist
+                customAttrs[attrName] = selectedConfig.asset_type.attributes[attrName].default || '';
               }
             });
           }
@@ -480,7 +489,7 @@ const AttributePanel = forwardRef(({ selectedConfig, xmlData, currentImage, qcTy
           // Also extract any other custom attributes not in config
           for (let i = 0; i < obj.children.length; i++) {
             const child = obj.children[i];
-            if (!standardTags.includes(child.tagName) && !customAttrs[child.tagName]) {
+            if (!standardTags.includes(child.tagName) && !customAttrs.hasOwnProperty(child.tagName)) {
               customAttrs[child.tagName] = child.textContent;
             }
           }
@@ -497,13 +506,22 @@ const AttributePanel = forwardRef(({ selectedConfig, xmlData, currentImage, qcTy
 
         setExistingObjects(objects);
         
-        // Initialize attributes for the first object or create new with defaults
-        if (objects.length > 0) {
+        // Auto-save default attributes for all objects that don't have them
+        setTimeout(() => {
+          autoSaveAllDefaultAttributes(objects);
+        }, 500);
+        
+        // Only initialize attributes if no object is currently selected
+        if (objects.length > 0 && (selectedObjectId === null || selectedObjectId === undefined)) {
           const firstObjectId = 0;
           if (onObjectSelect) {
             onObjectSelect(firstObjectId); // Notify parent about selection
           }
           const mergedAttributes = mergeAttributesWithDefaults(objects[0].customAttributes);
+          setAttributes(mergedAttributes);
+        } else if (objects.length > 0 && selectedObjectId !== null && selectedObjectId < objects.length) {
+          // If an object is already selected, keep that selection and load its attributes
+          const mergedAttributes = mergeAttributesWithDefaults(objects[selectedObjectId].customAttributes);
           setAttributes(mergedAttributes);
         }
       } else if (qcType === 'segmentation') {
@@ -520,7 +538,28 @@ const AttributePanel = forwardRef(({ selectedConfig, xmlData, currentImage, qcTy
               lng: shape.LatLng[1]
             } : null;
 
-            const customAttrs = shape.flags || {};
+            // Extract custom attributes from the shape object itself
+            const customAttrs = {};
+            const standardFields = ['label', 'shape_type', 'points', 'LatLng', 'flags', 'mask', 'group_id', 'description'];
+            
+            // First, extract attributes that are defined in the config
+            if (selectedConfig?.asset_type?.attributes) {
+              Object.keys(selectedConfig.asset_type.attributes).forEach(attrName => {
+                if (shape.hasOwnProperty(attrName) && shape[attrName] !== undefined && shape[attrName] !== '') {
+                  customAttrs[attrName] = shape[attrName];
+                } else {
+                  // Use default value from config if attribute doesn't exist
+                  customAttrs[attrName] = selectedConfig.asset_type.attributes[attrName].default || '';
+                }
+              });
+            }
+            
+            // Also extract any other custom attributes not in standard fields
+            Object.keys(shape).forEach(key => {
+              if (!standardFields.includes(key) && !customAttrs.hasOwnProperty(key)) {
+                customAttrs[key] = shape[key];
+              }
+            });
 
             return {
               id: index,
@@ -533,12 +572,22 @@ const AttributePanel = forwardRef(({ selectedConfig, xmlData, currentImage, qcTy
 
           setExistingObjects(objects);
           
-          if (objects.length > 0) {
+          // Auto-save default attributes for all objects that don't have them
+          setTimeout(() => {
+            autoSaveAllDefaultAttributes(objects);
+          }, 500);
+          
+          // Only initialize attributes if no object is currently selected
+          if (objects.length > 0 && (selectedObjectId === null || selectedObjectId === undefined)) {
             const firstObjectId = 0;
             if (onObjectSelect) {
               onObjectSelect(firstObjectId); // Notify parent about selection
             }
             const mergedAttributes = mergeAttributesWithDefaults(objects[0].customAttributes);
+            setAttributes(mergedAttributes);
+          } else if (objects.length > 0 && selectedObjectId !== null && selectedObjectId < objects.length) {
+            // If an object is already selected, keep that selection and load its attributes
+            const mergedAttributes = mergeAttributesWithDefaults(objects[selectedObjectId].customAttributes);
             setAttributes(mergedAttributes);
           }
         }
@@ -594,7 +643,7 @@ const AttributePanel = forwardRef(({ selectedConfig, xmlData, currentImage, qcTy
     
     // Select new object and load its attributes
     const newObjectId = obj.id;
-    if (onObjectSelect && selectionSource !== 'canvas') {
+    if (onObjectSelect) {
       onObjectSelect(newObjectId);
     }
     
@@ -710,135 +759,425 @@ const AttributePanel = forwardRef(({ selectedConfig, xmlData, currentImage, qcTy
     setEditForm({ name: '', customAttributes: {} });
   };
 
+  // Function to auto-save default attributes when an object has no attributes
+  const autoSaveDefaultAttributes = async () => {
+    if (!selectedConfig?.asset_type?.attributes || selectedObjectId === null) {
+      return;
+    }
+
+    // Check if the current object already has saved attributes
+    const currentObject = existingObjects[selectedObjectId];
+    if (!currentObject) return;
+
+    // Check if any custom attributes exist in the file
+    const hasExistingAttributes = Object.keys(currentObject.customAttributes || {}).some(key => 
+      selectedConfig.asset_type.attributes.hasOwnProperty(key) && 
+      currentObject.customAttributes[key] && 
+      currentObject.customAttributes[key].trim() !== ''
+    );
+
+    // If no attributes exist, auto-save defaults
+    if (!hasExistingAttributes) {
+      console.log('Auto-saving default attributes for object:', selectedObjectId);
+      await saveChanges();
+    }
+  };
+
+  // Function to auto-save default attributes for all objects when file is opened
+  const autoSaveAllDefaultAttributes = async (objects) => {
+    if (!selectedConfig?.asset_type?.attributes || !objects || objects.length === 0) {
+      return;
+    }
+
+    console.log('Checking all objects for missing default attributes...');
+    
+    // Prepare default attributes
+    const defaultAttrs = {};
+    Object.entries(selectedConfig.asset_type.attributes).forEach(([attrName, attrConfig]) => {
+      defaultAttrs[attrName] = attrConfig.default || '';
+    });
+    
+    // Check each object to see if it needs default attributes
+    for (let i = 0; i < objects.length; i++) {
+      const obj = objects[i];
+      
+      // Check if any custom attributes exist in the file
+      const hasExistingAttributes = Object.keys(obj.customAttributes || {}).some(key => 
+        selectedConfig.asset_type.attributes.hasOwnProperty(key) && 
+        obj.customAttributes[key] && 
+        obj.customAttributes[key].trim() !== ''
+      );
+
+      // If no attributes exist, auto-save defaults for this object
+      if (!hasExistingAttributes) {
+        console.log(`Auto-saving default attributes for object ${i}: ${obj.name}`);
+        
+        // Save attributes directly to this specific object
+        await new Promise(resolve => {
+          setTimeout(async () => {
+            try {
+              await saveAttributesToObjectDirect(i, defaultAttrs);
+            } catch (error) {
+              console.error(`Error saving default attributes for object ${i}:`, error);
+            }
+            resolve();
+          }, 100 * i); // Stagger saves to avoid conflicts
+        });
+      }
+    }
+    
+    console.log('Finished auto-saving default attributes for all objects');
+  };
+
+  // Helper function to save attributes directly to a specific object without changing global state
+  const saveAttributesToObjectDirect = async (objectId, attributesToSave) => {
+    try {
+      if (!selectedConfig || !currentImage || !existingObjects || objectId < 0 || objectId >= existingObjects.length) {
+        console.log('Cannot save: invalid parameters');
+        return;
+      }
+
+      const targetObject = existingObjects[objectId];
+      
+      if (qcType === 'detection') {
+        // Handle XML save for specific object
+        const parser = new DOMParser();
+        const xmlDoc = parser.parseFromString(xmlData, 'text/xml');
+        const objects = xmlDoc.getElementsByTagName('object');
+        
+        if (objectId < objects.length) {
+          const targetXmlObject = objects[objectId];
+          
+          // Remove existing attributes
+          Object.keys(selectedConfig.asset_type.attributes).forEach(attrName => {
+            const existingAttr = targetXmlObject.querySelector(attrName);
+            if (existingAttr) {
+              existingAttr.remove();
+            }
+          });
+          
+          // Add new attributes
+          Object.entries(attributesToSave).forEach(([attrName, attrValue]) => {
+            const attrElement = xmlDoc.createElement(attrName);
+            attrElement.textContent = attrValue;
+            targetXmlObject.appendChild(attrElement);
+          });
+          
+          const serializer = new XMLSerializer();
+          const updatedXmlData = serializer.serializeToString(xmlDoc);
+          
+          // Save XML to file
+          if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            await ipcRenderer.invoke('save-xml-file', currentImage.xmlFile, updatedXmlData);
+          }
+        }
+      } else {
+        // Handle JSON save for specific object
+        const jsonData = JSON.parse(xmlData);
+        
+        if (jsonData.shapes && objectId >= 0 && objectId < jsonData.shapes.length) {
+          const targetShape = jsonData.shapes[objectId];
+          
+          // Remove existing custom attributes
+          Object.keys(selectedConfig.asset_type.attributes).forEach(attrName => {
+            if (targetShape.hasOwnProperty(attrName)) {
+              delete targetShape[attrName];
+            }
+          });
+          
+          // Add new attributes
+          Object.entries(attributesToSave).forEach(([attrName, attrValue]) => {
+            targetShape[attrName] = attrValue;
+          });
+          
+          const updatedJsonData = JSON.stringify(jsonData, null, 2);
+          
+          // Save JSON to file
+          if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            const filePath = currentImage.xmlFile || currentImage.path.replace(/\.(jpg|jpeg|png|bmp|gif)$/i, '.json');
+            await ipcRenderer.invoke('save-json-file', filePath, updatedJsonData);
+          }
+        }
+      }
+      
+      console.log(`Successfully saved attributes to object ${objectId}`);
+    } catch (error) {
+      console.error(`Error saving attributes to object ${objectId}:`, error);
+    }
+  };
+
   const saveChanges = async () => {
     try {
-      if (!selectedConfig || !currentImage) return;
+      if (!selectedConfig || !currentImage || selectedObjectId === null) {
+        console.log('Cannot save: missing config, image, or no object selected');
+        return;
+      }
 
-      let dataToSave = xmlData;
+      // Lock selection during save operation
+      if (setIsSelectionLocked) {
+        setIsSelectionLocked(true);
+      }
+
+      console.log('Saving changes with attributes:', attributes);
       
       if (qcType === 'detection') {
         // Handle XML data for bounding box QC
         if (!xmlData) {
-          // Create new XML if none exists
-          dataToSave = `<?xml version="1.0" encoding="UTF-8"?>
-<annotation>
-  <folder>${currentImage.folder || 'images'}</folder>
-  <filename>${currentImage.name}</filename>
-  <path>${currentImage.path}</path>
-  <source>
-    <database>Unknown</database>
-  </source>
-  <size>
-    <width>1</width>
-    <height>1</height>
-    <depth>3</depth>
-  </size>
-  <segmented>0</segmented>
-</annotation>`;
+          console.log('No XML data to save');
+          setStatus({ type: 'error', message: 'No XML data available to save' });
+          return;
         }
 
         const parser = new DOMParser();
-        const xmlDoc = parser.parseFromString(dataToSave, 'text/xml');
+        const xmlDoc = parser.parseFromString(xmlData, 'text/xml');
         
-        // Save attributes to the currently selected object
-        if (selectedObjectId !== null) {
-          let targetObject = xmlDoc.getElementsByTagName('object')[selectedObjectId];
+        // Find the object by selectedObjectId
+        const objects = Array.from(xmlDoc.getElementsByTagName('object'));
+        if (selectedObjectId >= 0 && selectedObjectId < objects.length) {
+          const targetObject = objects[selectedObjectId];
           
-          if (targetObject) {
-            // Update/add custom attributes with current values (including defaults)
-            Object.entries(selectedConfig.asset_type.attributes).forEach(([attrName, attrConfig]) => {
-              let element = targetObject.getElementsByTagName(attrName)[0];
-              
-              if (!element) {
-                element = xmlDoc.createElement(attrName);
-                targetObject.appendChild(element);
-              }
-              
-              // Use current attribute value or default if empty
+          console.log('Updating object at index:', selectedObjectId);
+          
+          // Get the name element to insert attributes after it
+          const nameElement = targetObject.getElementsByTagName('name')[0];
+          
+          if (nameElement) {
+            // Remove existing custom attribute elements
+            if (selectedConfig?.asset_type?.attributes) {
+              Object.keys(selectedConfig.asset_type.attributes).forEach(attrName => {
+                const existingElement = targetObject.getElementsByTagName(attrName)[0];
+                if (existingElement) {
+                  targetObject.removeChild(existingElement);
+                }
+              });
+            }
+            
+            // Add new custom attributes right after the name element
+            Object.entries(selectedConfig.asset_type.attributes || {}).forEach(([attrName, attrConfig]) => {
+              const newElement = xmlDoc.createElement(attrName);
               const currentValue = attributes[attrName];
               const defaultValue = attrConfig.default || '';
-              element.textContent = currentValue || defaultValue;
+              newElement.textContent = currentValue !== undefined && currentValue !== '' ? currentValue : defaultValue;
+              
+              // Insert after name element
+              if (nameElement.nextSibling) {
+                targetObject.insertBefore(newElement, nameElement.nextSibling);
+              } else {
+                targetObject.appendChild(newElement);
+              }
             });
           }
+          
+          // Convert back to string
+          const serializer = new XMLSerializer();
+          const updatedXmlData = serializer.serializeToString(xmlDoc);
+          
+          // Save to file using backend
+          if (window.require) {
+            const { ipcRenderer } = window.require('electron');
+            const filePath = currentImage.xmlFile || currentImage.path.replace(/\.(jpg|jpeg|png|bmp|gif)$/i, '.xml');
+            
+            console.log('Writing to file:', filePath);
+            const success = await ipcRenderer.invoke('write-xml-file', filePath, updatedXmlData);
+            
+            if (success) {
+              setStatus({ type: 'success', message: 'Changes saved successfully!' });
+              setHasChanges(false);
+              
+              // Notify parent about changes
+              if (onAttributeChange) {
+                onAttributeChange(false);
+              }
+              
+              onAttributeUpdate(updatedXmlData);
+              
+              // Update existing objects with new attributes
+              const updatedObjects = [...existingObjects];
+              if (updatedObjects[selectedObjectId]) {
+                updatedObjects[selectedObjectId] = {
+                  ...updatedObjects[selectedObjectId],
+                  customAttributes: { ...attributes }
+                };
+                setExistingObjects(updatedObjects);
+              }
+            } else {
+              setStatus({ type: 'error', message: 'Failed to save changes to file' });
+            }
+          } else {
+            // Development mode fallback - use backend API
+            try {
+              const filePath = currentImage.xmlFile || currentImage.path.replace(/\.(jpg|jpeg|png|bmp|gif)$/i, '.xml');
+              console.log('Development mode: Saving XML data via backend API');
+              
+              const response = await fetch('http://localhost:5000/api/save-xml', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  filename: currentImage.name,
+                  xml_content: updatedXmlData
+                })
+              });
+              
+              if (response.ok) {
+                setStatus({ type: 'success', message: 'Changes saved successfully!' });
+                setHasChanges(false);
+                
+                if (onAttributeChange) {
+                  onAttributeChange(false);
+                }
+                
+                onAttributeUpdate(updatedXmlData);
+                
+                // Update existing objects with new attributes
+                const updatedObjects = [...existingObjects];
+                if (updatedObjects[selectedObjectId]) {
+                  updatedObjects[selectedObjectId] = {
+                    ...updatedObjects[selectedObjectId],
+                    customAttributes: { ...attributes }
+                  };
+                  setExistingObjects(updatedObjects);
+                }
+              } else {
+                setStatus({ type: 'error', message: 'Failed to save changes via backend' });
+              }
+            } catch (fetchError) {
+              console.error('Backend API error:', fetchError);
+              setStatus({ type: 'error', message: 'Backend API not available' });
+            }
+          }
+        } else {
+          console.error('Target object not found for ID:', selectedObjectId);
+          setStatus({ type: 'error', message: 'Selected object not found in XML data' });
+          return;
         }
-
-        // Convert back to string
-        const serializer = new XMLSerializer();
-        dataToSave = serializer.serializeToString(xmlDoc);
         
       } else if (qcType === 'segmentation') {
         // Handle JSON data for segmentation QC
-        if (!dataToSave) {
-          // Create new JSON structure if none exists
-          dataToSave = JSON.stringify({
-            image: currentImage.name,
-            objects: []
-          }, null, 2);
+        if (!xmlData) {
+          console.log('No JSON data to save');
+          setStatus({ type: 'error', message: 'No JSON data available to save' });
+          return;
         }
 
         try {
-          const jsonData = JSON.parse(dataToSave);
+          const jsonData = JSON.parse(xmlData);
           
-          // Save attributes to the currently selected object
-          if (selectedObjectId !== null && jsonData.objects && jsonData.objects[selectedObjectId]) {
-            const targetObject = jsonData.objects[selectedObjectId];
-            
-            // Update/add custom attributes with current values (including defaults)
-            if (!targetObject.attributes) {
-              targetObject.attributes = {};
-            }
-            
-            Object.entries(selectedConfig.asset_type.attributes).forEach(([attrName, attrConfig]) => {
-              // Use current attribute value or default if empty
-              const currentValue = attributes[attrName];
-              const defaultValue = attrConfig.default || '';
-              targetObject.attributes[attrName] = currentValue || defaultValue;
-            });
+          // Find the object by ID - first ensure we have the right object
+          const targetObject = existingObjects.find(obj => obj.id === selectedObjectId);
+          if (!targetObject) {
+            console.error('Cannot find object with ID:', selectedObjectId);
+            return;
           }
           
-          dataToSave = JSON.stringify(jsonData, null, 2);
+          // Find the corresponding shape in jsonData.shapes using the object's index
+          const shapeIndex = selectedObjectId; // Since we set id: index in parsing
+          if (jsonData.shapes && shapeIndex >= 0 && shapeIndex < jsonData.shapes.length) {
+            const targetShape = jsonData.shapes[shapeIndex];
+            
+            console.log('Saving attributes to JSON shape:', shapeIndex, attributes);
+            
+            // Prepare attributes with proper values (including defaults)
+            const attributesToSave = {};
+            Object.entries(selectedConfig.asset_type.attributes || {}).forEach(([attrName, attrConfig]) => {
+              const currentValue = attributes[attrName];
+              const defaultValue = attrConfig.default || '';
+              attributesToSave[attrName] = currentValue !== undefined && currentValue !== '' ? currentValue : defaultValue;
+            });
+            
+            // Remove any existing custom attributes from the shape (clean up first)
+            if (selectedConfig?.asset_type?.attributes) {
+              Object.keys(selectedConfig.asset_type.attributes).forEach(attrName => {
+                if (targetShape.hasOwnProperty(attrName)) {
+                  delete targetShape[attrName];
+                }
+              });
+            }
+            
+            // Add attributes directly to the shape object after standard fields
+            Object.entries(attributesToSave).forEach(([attrName, attrValue]) => {
+              targetShape[attrName] = attrValue;
+            });
+            
+            console.log('Updated JSON shape:', targetShape);
+            
+            const updatedJsonData = JSON.stringify(jsonData, null, 2);
+            
+            // Save to file
+            if (window.require) {
+              const { ipcRenderer } = window.require('electron');
+              const filePath = currentImage.xmlFile || currentImage.path.replace(/\.(jpg|jpeg|png|bmp|gif)$/i, '.json');
+              
+              const success = await ipcRenderer.invoke('write-xml-file', filePath, updatedJsonData);
+              
+              if (success) {
+                setStatus({ type: 'success', message: 'Changes saved successfully!' });
+                setHasChanges(false);
+                
+                if (onAttributeChange) {
+                  onAttributeChange(false);
+                }
+                
+                onAttributeUpdate(updatedJsonData);
+              } else {
+                setStatus({ type: 'error', message: 'Failed to save changes to file' });
+              }
+            } else {
+              // Development mode fallback - use backend API
+              try {
+                const filePath = currentImage.xmlFile || currentImage.path.replace(/\.(jpg|jpeg|png|bmp|gif)$/i, '.json');
+                console.log('Development mode: Saving JSON data via backend API');
+                
+                const response = await fetch('http://localhost:5000/api/save-json', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                  },
+                  body: JSON.stringify({
+                    filename: currentImage.name,
+                    json_content: updatedJsonData
+                  })
+                });
+                
+                if (response.ok) {
+                  setStatus({ type: 'success', message: 'Changes saved successfully!' });
+                  setHasChanges(false);
+                  
+                  if (onAttributeChange) {
+                    onAttributeChange(false);
+                  }
+                  
+                  onAttributeUpdate(updatedJsonData);
+                } else {
+                  setStatus({ type: 'error', message: 'Failed to save changes via backend' });
+                }
+              } catch (fetchError) {
+                console.error('Backend API error:', fetchError);
+                setStatus({ type: 'error', message: 'Backend API not available' });
+              }
+            }
+          } else {
+            console.error('Target shape not found for ID:', selectedObjectId);
+            setStatus({ type: 'error', message: 'Selected shape not found in JSON data' });
+            return;
+          }
         } catch (jsonError) {
           console.error('Error parsing JSON data:', jsonError);
           setStatus({ type: 'error', message: 'Invalid JSON data format' });
           return;
         }
       }
-
-      // Save to file
-      if (window.require) {
-        const { ipcRenderer } = window.require('electron');
-        const fileExtension = qcType === 'detection' ? '.xml' : '.json';
-        const filePath = currentImage.xmlFile || currentImage.path.replace(/\.(jpg|jpeg|png|bmp|gif)$/i, fileExtension);
-        
-        const success = await ipcRenderer.invoke('write-xml-file', filePath, dataToSave);
-        
-        if (success) {
-          setStatus({ type: 'success', message: 'Changes saved successfully!' });
-          setHasChanges(false);
-          
-          // Notify parent about changes and reset change state
-          if (onAttributeChange) {
-            onAttributeChange(false);
-          }
-          
-          onAttributeUpdate(dataToSave);
-        } else {
-          setStatus({ type: 'error', message: 'Failed to save changes' });
-        }
-      } else {
-        // Fallback for development without Electron
-        setStatus({ type: 'success', message: 'Changes would be saved in production!' });
-        setHasChanges(false);
-        
-        if (onAttributeChange) {
-          onAttributeChange(false);
-        }
-        
-        onAttributeUpdate(dataToSave);
-      }
     } catch (error) {
       console.error('Error saving changes:', error);
       setStatus({ type: 'error', message: 'Error saving changes: ' + error.message });
+    } finally {
+      // Always unlock selection when save operation completes
+      if (setIsSelectionLocked) {
+        setIsSelectionLocked(false);
+      }
     }
 
     // Clear status after 3 seconds
